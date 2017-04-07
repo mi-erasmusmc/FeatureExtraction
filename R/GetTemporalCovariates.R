@@ -104,6 +104,7 @@ getDbTemporalCovariateData <- function(connection,
                                                    use_covariate_condition_group_snomed = covariateSettings$useCovariateConditionGroupSnomed,
                                                    use_covariate_drug_era_start = covariateSettings$useCovariateDrugEraStart,
                                                    use_covariate_drug_era_present = covariateSettings$useCovariateDrugEraPresent,
+                                                   use_covariate_drug_group = covariateSettings$useCovariateDrugGroup,
                                                    use_covariate_measurement_value = covariateSettings$useCovariateMeasurementValue,
                                                    use_covariate_measurement_below = covariateSettings$useCovariateMeasurementBelow,
                                                    use_covariate_measurement_above = covariateSettings$useCovariateMeasurementAbove,
@@ -169,6 +170,7 @@ getDbTemporalCovariateData <- function(connection,
 #' @param useCovariateConditionGroupSnomed          Group using Snomed
 #' @param useCovariateDrugEraStart                  Extract start of drug era?
 #' @param useCovariateDrugPresent                   Extract active drug era?  
+#' @param useCovariateDrugGroup                     Extract the drug group?
 #' @param useCovariateMeasurementValue              Extract last measurement?
 #' @param useCovariateMeasurementBelow              Extract last measurement below normal range?
 #' @param useCovariateMeasurementAbove              Extract last measurement above normal range?
@@ -202,6 +204,7 @@ createTemporalCovariateSettings <- function(useCovariateConditionEraStart = FALS
                                             useCovariateConditionGroupSnomed = FALSE,
                                             useCovariateDrugEraStart = FALSE,
                                             useCovariateDrugEraPresent = FALSE,
+                                            useCovariateDrugGroup = FALSE,
                                             useCovariateMeasurementValue = FALSE,
                                             useCovariateMeasurementAbove = FALSE,
                                             useCovariateMeasurementBelow = FALSE,
