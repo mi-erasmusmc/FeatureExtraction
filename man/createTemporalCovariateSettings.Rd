@@ -6,11 +6,41 @@
 \usage{
 createTemporalCovariateSettings(useCovariateConditionEraStart = FALSE,
   useCovariateConditionEraPresent = FALSE,
-  useCovariateMeasurementValue = FALSE, excludedCovariateConceptIds = c(),
-  includedCovariateConceptIds = c(), startDays = -365:-1,
-  endDays = -365:-1)
+  useCovariateConditionGroup = FALSE,
+  useCovariateConditionGroupMeddra = FALSE,
+  useCovariateConditionGroupSnomed = FALSE,
+  useCovariateDrugEraStart = FALSE, useCovariateDrugEraPresent = FALSE,
+  useCovariateDrugGroup = FALSE, useCovariateMeasurementValue = FALSE,
+  useCovariateMeasurementAbove = FALSE,
+  useCovariateMeasurementBelow = FALSE,
+  useCovariateProcedureOccurence = FALSE,
+  useCovariateProcedureGroup = FALSE,
+  useCovariateObservationOccurence = FALSE,
+  useCovariateVisitOccurence = FALSE, useCovariateConceptCounts = FALSE,
+  excludedCovariateConceptIds = c(), includedCovariateConceptIds = c(),
+  startDays = -365:-1, endDays = -364:0)
 }
 \arguments{
+\item{useCovariateConditionEraStart}{Extract start of condition era?}
+
+\item{useCovariateConditionGroup}{Extract the condition group}
+
+\item{useCovariateConditionGroupMeddra}{Group using Meddra}
+
+\item{useCovariateConditionGroupSnomed}{Group using Snomed}
+
+\item{useCovariateDrugEraStart}{Extract start of drug era?}
+
+\item{useCovariateDrugGroup}{Extract the drug group?}
+
+\item{useCovariateMeasurementValue}{Extract last measurement?}
+
+\item{useCovariateMeasurementAbove}{Extract last measurement above normal range?}
+
+\item{useCovariateMeasurementBelow}{Extract last measurement below normal range?}
+
+\item{useCovariateConceptCounts}{Extract the concept counts?}
+
 \item{excludedCovariateConceptIds}{A list of concept IDs that should NOT be used to
 construct covariates.}
 
@@ -22,10 +52,22 @@ period, relative to the index date. 0 indicates the index
 date, -1 indicates the day before the index date, etc. The 
 start day is included in the time period.}
 
-\item{startDays}{A vector of integers representing the end of a time
+\item{endDays}{A vector of integers representing the end of a time
 period, relative to the index date. 0 indicates the index
 date, -1 indicates the day before the index date, etc. The
 end day is included in the time period.}
+
+\item{useCovariateConditionPresent}{Extract active condition era?}
+
+\item{useCovariateDrugPresent}{Extract active drug era?}
+
+\item{useCovariateProcedure}{Extract the procedures?}
+
+\item{useCovariateProcedure}{Extract the procedures at group level?}
+
+\item{useCovariateObservation}{Extract the observations?}
+
+\item{useCovariateVisitOccurrence}{Extract the visit occurrence?}
 }
 \value{
 An object of type \code{defaultCovariateSettings}, to be used in other functions.
@@ -36,4 +78,3 @@ Create temporal covariate settings
 \details{
 creates an object specifying how covariates should be contructed from data in the CDM model.
 }
-

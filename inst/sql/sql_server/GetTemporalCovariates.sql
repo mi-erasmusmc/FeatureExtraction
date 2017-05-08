@@ -35,6 +35,7 @@ limitations under the License.
 {DEFAULT @use_covariate_measurement_value = FALSE} 
 {DEFAULT @use_covariate_measurement_below = FALSE} 
 {DEFAULT @use_covariate_measurement_above = FALSE} 
+{DEFAULT @use_covariate_observation_occurence = FALSE}
 {DEFAULT @use_covariate_visit_occurrence = FALSE} 
 {DEFAULT @use_covariate_concept_counts = FALSE} 
 {DEFAULT @has_excluded_covariate_concept_ids} 

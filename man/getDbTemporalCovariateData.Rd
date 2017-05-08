@@ -44,7 +44,7 @@ information on how the covariateData object was constructed.} }
 }
 \description{
 Constructs a large default set of covariates for one or more cohorts using data in the CDM schema.
-Includes covariates for all drugs, drug classes, condition, condition classes, procedures,
+Includes temporal covariates for all measurements, drugs, drug classes, condition, condition classes, procedures,
 observations, etc.
 }
 \details{
@@ -54,4 +54,3 @@ cohort. The cohort is assumed to be in an existing temp table with these fields:
 unique identifier that will be used as rowID in the output. Typically, users don't call this
 function directly but rather use the \code{\link{getDbCovariateData}} function instead.
 }
-
