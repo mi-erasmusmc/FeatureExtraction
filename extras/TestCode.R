@@ -1,6 +1,8 @@
 library(FeatureExtraction)
 options(fftempdir = "s:/FFtemp")
 
+
+# Pdw ---------------------------------------------------------------------
 dbms <- "pdw"
 user <- NULL
 pw <- NULL
@@ -11,22 +13,131 @@ connectionDetails <- DatabaseConnector::createConnectionDetails(dbms = dbms,
                                                                 user = user,
                                                                 password = pw,
                                                                 port = port)
-cdmDatabaseSchema <- "cdm_truven_mdcd_v5.dbo"
-workDatabaseSchema <- "scratch.dbo"
-studyCohortTable <- "ohdsi_celecoxib_prediction"
+cdmDatabaseSchema <- "cdm_truven_mdcd_v521.dbo"
+cohortDatabaseSchema <- "scratch.dbo"
+cohortTable <- "ohdsi_celecoxib_prediction"
 oracleTempSchema <- NULL
 cdmVersion <- "5"
 outputFolder <- "S:/temp/CelecoxibPredictiveModels"
 
 
-### Create covariateSettings ###
+
+# PostgreSQL --------------------------------------------------------------
+dbms <- "postgresql"
+user <- "postgres"
+pw <- Sys.getenv("pwPostgres")
+server <- "localhost/ohdsi"
+connectionDetails <- DatabaseConnector::createConnectionDetails(dbms = dbms,
+                                                                server = server,
+                                                                user = user,
+                                                                password = pw)
+cdmDatabaseSchema <- "cdm_synpuf"
+cohortDatabaseSchema <- "scratch"
+cohortTable <- "ohdsi_celecoxib_prediction"
+oracleTempSchema <- NULL
+cdmVersion <- "5"
+outputFolder <- "S:/temp/CelecoxibPredictiveModelsPg"
+
+
 conn <- DatabaseConnector::connect(connectionDetails)
-sql <- "SELECT descendant_concept_id FROM @cdm_database_schema.concept_ancestor WHERE ancestor_concept_id = 1118084"
-sql <- SqlRender::renderSql(sql, cdm_database_schema = cdmDatabaseSchema)$sql
+### Populate cohort table ###
+sql <- "IF OBJECT_ID('@cohort_database_schema.@cohort_table', 'U') IS NOT NULL
+DROP TABLE @cohort_database_schema.@cohort_table;
+SELECT 1 AS cohort_definition_id, person_id AS subject_id, drug_era_start_date AS cohort_start_date 
+INTO @cohort_database_schema.@cohort_table FROM @cdm_database_schema.drug_era 
+WHERE drug_concept_id = 1118084;"
+sql <- SqlRender::renderSql(sql, 
+                            cdm_database_schema = cdmDatabaseSchema,
+                            cohort_database_schema = cohortDatabaseSchema,
+                            cohort_table = cohortTable)$sql
 sql <- SqlRender::translateSql(sql, targetDialect = connectionDetails$dbms)$sql
-celecoxibDrugs <- DatabaseConnector::querySql(conn, sql)
-celecoxibDrugs <- celecoxibDrugs[, 1]
+DatabaseConnector::executeSql(conn, sql)
+
+sql <- "SELECT COUNT(*) FROM @cohort_database_schema.@cohort_table WHERE cohort_definition_id = 1"
+sql <- SqlRender::renderSql(sql,
+                            cohort_database_schema = cohortDatabaseSchema,
+                            cohort_table = cohortTable)$sql
+sql <- SqlRender::translateSql(sql, targetDialect = connectionDetails$dbms)$sql
+DatabaseConnector::querySql(conn, sql)
 RJDBC::dbDisconnect(conn)
+
+### Create covariateSettings ###
+
+celecoxibDrugs <- 1118084
+
+covariateSettings <- FeatureExtraction::createCovariateSettings(useCovariateDemographics = TRUE,
+                                                                useCovariateDemographicsGender = TRUE,
+                                                                useCovariateDemographicsRace = TRUE,
+                                                                useCovariateDemographicsEthnicity = TRUE,
+                                                                useCovariateDemographicsAge = TRUE,
+                                                                useCovariateDemographicsYear = TRUE,
+                                                                useCovariateDemographicsMonth = TRUE,
+                                                                useCovariateConditionOccurrence = TRUE,
+                                                                useCovariateConditionOccurrenceLongTerm = TRUE,
+                                                                useCovariateConditionOccurrenceShortTerm = TRUE,
+                                                                useCovariateConditionOccurrenceInptMediumTerm = TRUE,
+                                                                useCovariateConditionEra = TRUE,
+                                                                useCovariateConditionEraEver = TRUE,
+                                                                useCovariateConditionEraOverlap = TRUE,
+                                                                useCovariateConditionGroup = TRUE,
+                                                                useCovariateConditionGroupMeddra = TRUE,
+                                                                useCovariateConditionGroupSnomed = TRUE,
+                                                                useCovariateDrugExposure = TRUE,
+                                                                useCovariateDrugExposureLongTerm = TRUE,
+                                                                useCovariateDrugExposureShortTerm = TRUE,
+                                                                useCovariateDrugEra = TRUE,
+                                                                useCovariateDrugEraLongTerm = TRUE,
+                                                                useCovariateDrugEraShortTerm = TRUE,
+                                                                useCovariateDrugEraOverlap = TRUE,
+                                                                useCovariateDrugEraEver = TRUE,
+                                                                useCovariateDrugGroup = TRUE,
+                                                                useCovariateProcedureOccurrence = TRUE,
+                                                                useCovariateProcedureOccurrenceLongTerm = TRUE,
+                                                                useCovariateProcedureOccurrenceShortTerm = TRUE,
+                                                                useCovariateProcedureGroup = TRUE,
+                                                                useCovariateObservation = TRUE,
+                                                                useCovariateObservationLongTerm = TRUE,
+                                                                useCovariateObservationShortTerm = TRUE,
+                                                                useCovariateObservationCountLongTerm = TRUE,
+                                                                useCovariateMeasurement = TRUE,
+                                                                useCovariateMeasurementLongTerm = TRUE,
+                                                                useCovariateMeasurementShortTerm = TRUE,
+                                                                useCovariateMeasurementCountLongTerm = TRUE,
+                                                                useCovariateMeasurementBelow = TRUE,
+                                                                useCovariateMeasurementAbove = TRUE,
+                                                                useCovariateConceptCounts = TRUE,
+                                                                useCovariateRiskScores = TRUE,
+                                                                useCovariateRiskScoresCharlson = TRUE,
+                                                                useCovariateRiskScoresDCSI = TRUE,
+                                                                useCovariateRiskScoresCHADS2 = TRUE,
+                                                                useCovariateRiskScoresCHADS2VASc = TRUE,
+                                                                useCovariateInteractionYear = FALSE,
+                                                                useCovariateInteractionMonth = FALSE,
+                                                                excludedCovariateConceptIds = celecoxibDrugs,
+                                                                addDescendantsToExclude = TRUE,
+                                                                includedCovariateConceptIds = c(),
+                                                                addDescendantsToInclude = TRUE,
+                                                                deleteCovariatesSmallCount = 100)
+
+covs <- getDbCovariateData(connectionDetails = connectionDetails,
+                           oracleTempSchema = oracleTempSchema,
+                           cdmVersion = cdmVersion,
+                           cdmDatabaseSchema = cdmDatabaseSchema,
+                           cohortDatabaseSchema = cohortDatabaseSchema,
+                           cohortTable = cohortTable,
+                           cohortIds = 1,
+                           cohortTableIsTemp = FALSE,
+                           covariateSettings = covariateSettings,
+                           normalize = TRUE)
+any(covs$covariateRef$conceptId %in% cids)
+summary(covs)
+saveCovariateData(covs, "s:/temp/covsOld")
+
+covs <- loadCovariateData("s:/temp/covsOld")
+library(ffbase)
+covs$covariateRef[covs$covariateRef$analysisId == 4, ]
+
+# deprecated --------------------------------------------------------------
 
 covariateSettings <- FeatureExtraction::createCovariateSettings(useCovariateDemographics = TRUE,
                                                                 useCovariateDemographicsGender = TRUE,
@@ -76,147 +187,7 @@ covariateSettings <- FeatureExtraction::createCovariateSettings(useCovariateDemo
                                                                 useCovariateRiskScoresCHADS2VASc = TRUE,
                                                                 useCovariateInteractionYear = FALSE,
                                                                 useCovariateInteractionMonth = FALSE,
-                                                                excludedCovariateConceptIds = celecoxibDrugs,
+                                                                excludedCovariateConceptIds = 1234,
                                                                 includedCovariateConceptIds = c(),
                                                                 deleteCovariatesSmallCount = 100)
 
-
-plpData <- getDbPlpData(connectionDetails = connectionDetails,
-                        cdmDatabaseSchema = cdmDatabaseSchema,
-                        oracleTempSchema = oracleTempSchema,
-                        cohortDatabaseSchema = workDatabaseSchema,
-                        cohortTable = studyCohortTable,
-                        cohortIds = 1,
-                        useCohortEndDate = FALSE,
-                        windowPersistence = 365,
-                        covariateSettings = covariateSettings,
-                        outcomeDatabaseSchema = workDatabaseSchema,
-                        outcomeTable = studyCohortTable,
-                        outcomeIds = 10:16,
-                        firstOutcomeOnly = TRUE,
-                        cdmVersion = cdmVersion)
-
-savePlpData(plpData, "s:/temp/plpData")
-
-plpData <- loadPlpData("s:/temp/plpData")
-
-plpData
-summary(plpData)
-
-splits <- splitData(plpData, splits = c(0.75, 0.25))
-
-summary(splits[[1]])
-summary(splits[[2]])
-
-model <- fitPredictiveModel(plpData = splits[[1]],
-                            modelType = "logistic",
-                            removeDropoutsForLr = TRUE,
-                            cohortId = 1,
-                            outcomeId = 10,
-                            prior = createPrior("laplace", exclude = c(0), variance = 0.007))
-
-saveRDS(model, file = "s:/temp/plpTestmodel.rds")
-
-# model <- readRDS('s:/temp/plpTestmodel.rds')
-
-prediction <- predictProbabilities(model, splits[[2]])
-
-
-saveRDS(prediction, file = "s:/temp/plpTestPredicition.rds")
-
-prediction <- readRDS("s:/temp/plpTestPredicition.rds")
-
-plotCalibration(prediction,
-                splits[[2]],
-                numberOfStrata = 10,
-                truncateFraction = 0.01,
-                fileName = "s:/temp/calibration.png")
-
-
-
-### Test standalone construction of covariates ###
-library(FeatureExtraction)
-options(fftempdir = "s:/FFtemp")
-
-dbms <- "pdw"
-user <- NULL
-pw <- NULL
-server <- "JRDUSAPSCTL01"
-port <- 17001
-connectionDetails <- DatabaseConnector::createConnectionDetails(dbms = dbms,
-                                                                server = server,
-                                                                user = user,
-                                                                password = pw,
-                                                                port = port)
-cdmDatabaseSchema <- "cdm_truven_mdcd_v5.dbo"
-workDatabaseSchema <- "scratch.dbo"
-studyCohortTable <- "ohdsi_celecoxib_prediction"
-oracleTempSchema <- NULL
-cdmVersion <- "5"
-
-covariateSettings <- FeatureExtraction::createCovariateSettings(useCovariateDemographics = FALSE,
-                                                                useCovariateDemographicsGender = FALSE,
-                                                                useCovariateDemographicsRace = FALSE,
-                                                                useCovariateDemographicsEthnicity = FALSE,
-                                                                useCovariateDemographicsAge = FALSE,
-                                                                useCovariateDemographicsYear = FALSE,
-                                                                useCovariateDemographicsMonth = FALSE,
-                                                                useCovariateConditionOccurrence = TRUE,
-                                                                useCovariateConditionOccurrence365d = TRUE,
-                                                                useCovariateConditionOccurrence30d = FALSE,
-                                                                useCovariateConditionOccurrenceInpt180d = FALSE,
-                                                                useCovariateConditionEra = FALSE,
-                                                                useCovariateConditionEraEver = FALSE,
-                                                                useCovariateConditionEraOverlap = FALSE,
-                                                                useCovariateConditionGroup = FALSE,
-                                                                useCovariateConditionGroupMeddra = FALSE,
-                                                                useCovariateConditionGroupSnomed = FALSE,
-                                                                useCovariateDrugExposure = TRUE,
-                                                                useCovariateDrugExposure365d = TRUE,
-                                                                useCovariateDrugExposure30d = FALSE,
-                                                                useCovariateDrugEra = FALSE,
-                                                                useCovariateDrugEra365d = FALSE,
-                                                                useCovariateDrugEra30d = FALSE,
-                                                                useCovariateDrugEraOverlap = FALSE,
-                                                                useCovariateDrugEraEver = FALSE,
-                                                                useCovariateDrugGroup = FALSE,
-                                                                useCovariateProcedureOccurrence = FALSE,
-                                                                useCovariateProcedureOccurrence365d = FALSE,
-                                                                useCovariateProcedureOccurrence30d = FALSE,
-                                                                useCovariateProcedureGroup = FALSE,
-                                                                useCovariateObservation = FALSE,
-                                                                useCovariateObservation365d = FALSE,
-                                                                useCovariateObservation30d = FALSE,
-                                                                useCovariateObservationCount365d = FALSE,
-                                                                useCovariateMeasurement = FALSE,
-                                                                useCovariateMeasurement365d = FALSE,
-                                                                useCovariateMeasurement30d = FALSE,
-                                                                useCovariateMeasurementCount365d = FALSE,
-                                                                useCovariateMeasurementBelow = FALSE,
-                                                                useCovariateMeasurementAbove = FALSE,
-                                                                useCovariateConceptCounts = FALSE,
-                                                                useCovariateRiskScores = FALSE,
-                                                                useCovariateRiskScoresCharlson = FALSE,
-                                                                useCovariateRiskScoresDCSI = FALSE,
-                                                                useCovariateRiskScoresCHADS2 = FALSE,
-                                                                useCovariateRiskScoresCHADS2VASc = FALSE,
-                                                                useCovariateInteractionYear = FALSE,
-                                                                useCovariateInteractionMonth = FALSE,
-                                                                excludedCovariateConceptIds = c(),
-                                                                includedCovariateConceptIds = c(),
-                                                                deleteCovariatesSmallCount = 100)
-
-covariates <- getDbCovariateData(connectionDetails = connectionDetails,
-                                 oracleTempSchema = NULL,
-                                 cdmVersion = cdmVersion,
-                                 cdmDatabaseSchema = cdmDatabaseSchema,
-                                 cohortDatabaseSchema = cdmDatabaseSchema,
-                                 cohortTable = "cohort",
-                                 cohortIds = 2256,
-                                 covariateSettings = covariateSettings,
-                                 rowIdField = "subject_id",
-                                 cohortTableIsTemp = FALSE,
-                                 normalize = FALSE)
-                                 
-conn <- connect(connectionDetails)
-querySql(conn, "SELECT DISTINCT cohort_definition_id FROM cdm_truven_mdcd_v5.dbo.cohort")
