@@ -123,13 +123,11 @@ getDbTemporalCovariateData <- function(connection,
   covariateSql <- "SELECT row_id, covariate_id, time_id, covariate_value FROM #cov"
   covariateSql <- SqlRender::renderSql(covariateSql)$sql
   covariateSql <- SqlRender::translateSql(covariateSql,
-                                          "sql server",
                                           attr(connection, "dbms"),
                                           oracleTempSchema)$sql
   covariates <- DatabaseConnector::querySql.ffdf(connection, covariateSql)
   covariateRefSql <- "SELECT covariate_id, covariate_name, analysis_id, concept_id  FROM #cov_ref ORDER BY covariate_id"
   covariateRefSql <- SqlRender::translateSql(covariateRefSql,
-                                             "sql server",
                                              attr(connection, "dbms"),
                                              oracleTempSchema)$sql
   covariateRef <- DatabaseConnector::querySql.ffdf(connection, covariateRefSql)

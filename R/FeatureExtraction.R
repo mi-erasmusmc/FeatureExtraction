@@ -1,6 +1,6 @@
 # @file FeatureExtraction.R
 #
-# Copyright 2016 Observational Health Data Sciences and Informatics
+# Copyright 2017 Observational Health Data Sciences and Informatics
 #
 # This file is part of FeatureExtraction
 # 
@@ -22,7 +22,6 @@
 #' @name FeatureExtraction
 #' @importFrom Rcpp evalCpp
 #' @importFrom SqlRender loadRenderTranslateSql translateSql
-#' @importFrom RJDBC dbDisconnect
 #' @importFrom plyr ddply
 #' @import bit
 #' @import DatabaseConnector
