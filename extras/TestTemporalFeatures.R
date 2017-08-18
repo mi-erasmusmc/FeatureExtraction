@@ -2,12 +2,12 @@ library(SqlRender)
 library(DatabaseConnector)
 library(FeatureExtraction)
 options(fftempdir = "s:/fftemp")
-
+options(fftempdir = "~/tmp/tempff")
 
 dbms <- "pdw"
 user <- NULL
 pw <- NULL
-server <- "JRDUSAPSCTL01"
+server <- "Res-Srv-Lin-01/"
 cdmDatabaseSchema <- "CDM_Truven_mdcr_V520.dbo"
 resultsDatabaseSchema <- "scratch.dbo"
 port <- 17001
@@ -20,6 +20,23 @@ connectionDetails <- DatabaseConnector::createConnectionDetails(dbms = dbms,
                                                                 password = pw,
                                                                 port = port)
 connection <- DatabaseConnector::connect(connectionDetails)
+
+dbms <- "postgresql"
+user <- "postgres"
+pw <- "secret"
+server <- "Res-Srv-Lin-01/IPCI-EEYORE_20170309"
+port <- 5432
+connectionDetails <- DatabaseConnector::createConnectionDetails(dbms = dbms,
+                                                                server = server,
+                                                                user = user,
+                                                                password = pw,
+                                                                port = port)
+
+connection <- DatabaseConnector::connect(connectionDetails)
+
+cdmDatabaseSchema <- "cdm"
+workDatabaseSchema <- "xpan"
+resultsDatabaseSchema <-"xpan"
 
 sql <- loadRenderTranslateSql("coxibVsNonselVsGiBleed.sql",
                               packageName = "CohortMethod",
