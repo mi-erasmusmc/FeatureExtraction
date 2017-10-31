@@ -24,20 +24,18 @@ limitations under the License.
 {DEFAULT @concept_class_id = 'concept_class_id'} 
 {DEFAULT @use_covariate_condition_era_start = FALSE} 
 {DEFAULT @use_covariate_condition_era_present = TRUE} 
-{DEFAULT @use_covariate_drug_era_start = FALSE} 
-{DEFAULT @use_covariate_drug_era_present = FALSE} 
 {DEFAULT @use_covariate_condition_group = TRUE}
 {DEFAULT @use_covariate_condition_group_meddra = TRUE} 
-{DEFAULT @use_covariate_condition_group_snomed = TRUE} /* BUG */
-/* To Do
-{DEFAULT @use_covariate_drug_group_start = FALSE} 
-{DEFAULT @use_covariate_drug_group_present = FALSE} 
-*/
+{DEFAULT @use_covariate_condition_group_snomed = TRUE} 
+{DEFAULT @use_covariate_drug_era_start = FALSE} 
+{DEFAULT @use_covariate_drug_era_present = FALSE} 
+{DEFAULT @use_covariate_drug_group = FALSE} 
 {DEFAULT @use_covariate_procedure_occurrence = FALSE} 
 {DEFAULT @use_covariate_procedure_group = FALSE}
 {DEFAULT @use_covariate_measurement_value = FALSE} 
 {DEFAULT @use_covariate_measurement_below = FALSE} 
 {DEFAULT @use_covariate_measurement_above = FALSE} 
+{DEFAULT @use_covariate_observation_occurence = FALSE}
 {DEFAULT @use_covariate_visit_occurrence = FALSE} 
 {DEFAULT @use_covariate_concept_counts = FALSE} 
 {DEFAULT @has_excluded_covariate_concept_ids} 
@@ -161,7 +159,6 @@ CONDITION GROUP
 
 {@use_covariate_condition_group} ? {
 
-
 IF OBJECT_ID('tempdb..#condition_group', 'U') IS NOT NULL
 	DROP TABLE #condition_group;
 
@@ -214,7 +211,7 @@ INNER JOIN @cdm_database_schema.concept_ancestor ca1
 INNER JOIN @cdm_database_schema.concept c1
 	ON ca1.ancestor_concept_id = c1.concept_id
 WHERE c1.vocabulary_id = 'SNOMED'
-  AND c1.@concept_class_id = 'Clinical finding'
+  AND c1.@concept_class_id = 'Clinical Finding'
   AND ca1.min_levels_of_separation = 1
   AND c1.concept_id NOT IN (select distinct descendant_concept_id from @cdm_database_schema.concept_ancestor where ancestor_concept_id = 441840 /*clinical finding*/ and max_levels_of_separation <= 2)
 {@has_excluded_covariate_concept_ids} ? {  AND c1.concept_id NOT IN (SELECT concept_id FROM #excluded_cov)}
@@ -375,6 +372,108 @@ LEFT JOIN @cdm_database_schema.concept c1
 ;
 }
 
+
+/**************************
+***************************
+DRUG GROUP 
+***************************
+**************************/
+{@use_covariate_drug_group} ? {
+
+
+IF OBJECT_ID('tempdb..#drug_group', 'U') IS NOT NULL
+	DROP TABLE #drug_group;
+
+--ATC
+SELECT DISTINCT ca1.descendant_concept_id,
+	ca1.ancestor_concept_id
+  INTO #drug_group
+FROM (
+	SELECT covariate_id,
+		covariate_name,
+		analysis_id,
+		concept_id
+	FROM #cov_ref
+	WHERE analysis_id > 200
+		AND analysis_id < 300
+	) ccr1
+INNER JOIN @cdm_database_schema.concept_ancestor ca1
+	ON ccr1.concept_id = ca1.descendant_concept_id
+INNER JOIN @cdm_database_schema.concept c1
+	ON ca1.ancestor_concept_id = c1.concept_id
+WHERE c1.vocabulary_id = 'ATC'
+	AND len(c1.concept_code) IN (1, 3, 4, 5)
+	AND c1.concept_id != 0
+{@has_excluded_covariate_concept_ids} ? {	AND c1.concept_id NOT IN (SELECT concept_id FROM #excluded_cov)}
+{@has_included_covariate_concept_ids} ? {	AND c1.concept_id IN (SELECT concept_id FROM #included_cov)}	
+;
+
+
+INSERT INTO #cov_ref (
+	covariate_id,
+	covariate_name,
+	analysis_id,
+	concept_id
+	)
+SELECT DISTINCT CAST(cg1.ancestor_concept_id AS BIGINT) * 1000 + 50 + ccr1.analysis_id AS covariate_id,
+	CASE
+		WHEN analysis_id = 201
+			THEN 'Drug era start within drug group:  '
+		WHEN analysis_id = 202
+			THEN 'Drug era present within drug group:  '
+  ELSE 'Other drug group analysis'
+		END + CAST(cg1.ancestor_concept_id AS VARCHAR) + '-' + c1.concept_name AS covariate_name,
+	ccr1.analysis_id,
+	cg1.ancestor_concept_id AS concept_id
+FROM (
+	SELECT covariate_id,
+		covariate_name,
+		analysis_id,
+		concept_id
+	FROM #cov_ref
+	WHERE analysis_id > 200
+		AND analysis_id < 300
+	) ccr1
+INNER JOIN #drug_group cg1
+	ON ccr1.concept_id = cg1.descendant_concept_id
+INNER JOIN @cdm_database_schema.concept c1
+	ON cg1.ancestor_concept_id = c1.concept_id;
+
+
+SELECT DISTINCT cc1.row_id,
+	CAST(cg1.ancestor_concept_id AS BIGINT) * 1000 + 50 + ccr1.analysis_id AS covariate_id,
+  time_id,
+	1 AS covariate_value
+  INTO #cov_dg
+FROM (
+SELECT row_id, covariate_id, time_id, covariate_value FROM #dummy
+
+{@use_covariate_drug_era_start} ? {
+UNION
+SELECT row_id, covariate_id, time_id, covariate_value
+FROM #cov_dr_start
+}
+{@use_covariate_drug_era_present} ? {
+UNION
+SELECT row_id, covariate_id, time_id, covariate_value
+FROM #cov_dr_pres
+}
+
+) cc1
+INNER JOIN (
+	SELECT covariate_id,
+		covariate_name,
+		analysis_id,
+		concept_id
+	FROM #cov_ref
+	WHERE analysis_id > 200
+		AND analysis_id < 300
+	) ccr1
+	ON cc1.covariate_id = ccr1.covariate_id
+INNER JOIN #drug_group cg1
+	ON ccr1.concept_id = cg1.descendant_concept_id;
+}
+	
 /**************************
 ***************************
 MEASUREMENT
@@ -1056,6 +1155,13 @@ SELECT row_id, covariate_id, time_id, covariate_value
 FROM #cov_dr_start
 }
 
+{@use_covariate_drug_group} ?{
+UNION
+
+SELECT row_id, covariate_id, time_id, covariate_value
+FROM #cov_dg
+}
+
 {@use_covariate_drug_era_present} ? {
 UNION
 
@@ -1173,6 +1279,8 @@ IF OBJECT_ID('tempdb..#cov_dr_start', 'U') IS NOT NULL
   DROP TABLE #cov_dr_start;
 IF OBJECT_ID('tempdb..#cov_dr_pres', 'U') IS NOT NULL
   DROP TABLE #cov_dr_pres;
+IF OBJECT_ID('tempdb..#cov_dg', 'U') IS NOT NULL
+  DROP TABLE #cov_dg;  
 IF OBJECT_ID('tempdb..#cov_meas_val', 'U') IS NOT NULL
   DROP TABLE #cov_meas_val;  
 IF OBJECT_ID('tempdb..#cov_meas_below', 'U') IS NOT NULL
