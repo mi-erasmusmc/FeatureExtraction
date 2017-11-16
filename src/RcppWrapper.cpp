@@ -3,7 +3,7 @@
  *
  * This file is part of FeatureExtraction
  *
- * Copyright 2016 Observational Health Data Sciences and Informatics
+ * Copyright 2017 Observational Health Data Sciences and Informatics
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,7 +28,7 @@
 
 using namespace Rcpp;
 
-// [[Rcpp::export(".bySum")]]
+// [[Rcpp::export]]
 DataFrame bySum(List ffValues, List ffBins) {
   
   using namespace ohdsi::featureExtraction;
@@ -50,7 +50,7 @@ DataFrame bySum(List ffValues, List ffBins) {
   return DataFrame::create();
 }
 
-// [[Rcpp::export(".byMax")]]
+// [[Rcpp::export]]
 DataFrame byMax(List ffValues, List ffBins) {
   
   using namespace ohdsi::featureExtraction;

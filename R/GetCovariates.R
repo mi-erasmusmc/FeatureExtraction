@@ -1,5 +1,3 @@
-# @file GetCovariates.R
-#
 # Copyright 2017 Observational Health Data Sciences and Informatics
 #
 # This file is part of FeatureExtraction
@@ -40,7 +38,7 @@
 #'                               Requires read permissions to this database. On SQL Server, this should
 #'                               specifiy both the database and the schema, so for example
 #'                               'cdm_instance.dbo'.
-#' @param cdmVersion             Define the OMOP CDM version used: currently support "4" and "5".
+#' @param cdmVersion             Define the OMOP CDM version used: currently supported is "5".
 #' @param cohortTable            Name of the (temp) table holding the cohort for which we want to
 #'                               construct covariates
 #' @param cohortDatabaseSchema   If the cohort table is not a temp table, specify the database schema
@@ -48,7 +46,7 @@
 #'                               specifiy both the database and the schema, so for example
 #'                               'cdm_instance.dbo'.
 #' @param cohortTableIsTemp      Is the cohort table a temp table?
-#' @param cohortIds              For which cohort IDs should covariates be constructed? If left empty,
+#' @param cohortId               For which cohort ID should covariates be constructed? If set to -1,
 #'                               covariates will be constructed for all cohorts in the specified cohort
 #'                               table.
 #' @param rowIdField             The name of the field in the cohort table that is to be used as the
@@ -56,163 +54,122 @@
 #'                               there is more than one period per person.
 #' @param covariateSettings      Either an object of type \code{covariateSettings} as created using one
 #'                               of the createCovariate functions, or a list of such objects.
-#' @param normalize              Should covariate values be normalized? If true, values will be divided
-#'                               by the max value per covariate.
+#' @param aggregated             Should aggregate statistics be computed instead of covariates per
+#'                               cohort entry?
 #'
 #' @return
-#' Returns an object of type \code{covariateData}, containing information on the baseline covariates.
-#' Information about multiple outcomes can be captured at once for efficiency reasons. This object is
-#' a list with the following components: \describe{ \item{covariates}{An ffdf object listing the
-#' baseline covariates per person in the cohorts. This is done using a sparse representation:
-#' covariates with a value of 0 are omitted to save space. The covariates object will have three
-#' columns: rowId, covariateId, and covariateValue. The rowId is usually equal to the person_id,
-#' unless specified otherwise in the rowIdField argument.} \item{covariateRef}{An ffdf object
-#' describing the covariates that have been extracted.} \item{metaData}{A list of objects with
-#' information on how the covariateData object was constructed.} }
+#' Returns an object of type \code{covariateData}, containing information on the covariates.
 #'
 #' @export
 getDbCovariateData <- function(connectionDetails = NULL,
                                connection = NULL,
                                oracleTempSchema = NULL,
                                cdmDatabaseSchema,
-                               cdmVersion = "4",
+                               cdmVersion = "5",
                                cohortTable = "cohort",
                                cohortDatabaseSchema = cdmDatabaseSchema,
                                cohortTableIsTemp = FALSE,
-                               cohortIds = c(),
+                               cohortId = -1,
                                rowIdField = "subject_id",
                                covariateSettings,
-                               normalize = TRUE) {
+                               aggregated = FALSE) {
   if (is.null(connectionDetails) && is.null(connection)) {
     stop("Need to provide either connectionDetails or connection")
   }
   if (!is.null(connectionDetails) && !is.null(connection)) {
     stop("Need to provide either connectionDetails or connection, not both")
   }
+  if (cdmVersion == "4") {
+    stop("CDM version 4 is not supported any more")
+  }
   if (!is.null(connectionDetails)) {
     connection <- DatabaseConnector::connect(connectionDetails)
   }
-  if (cohortTableIsTemp && length(cohortIds) == 0) {
-    cohortTempTable <- cohortTable
-  } else {
-    cohortTempTable <- "#cohort_for_cov_temp"
-    if (cohortTableIsTemp) {
+  if (cohortTableIsTemp) {
+    if (substr(cohortTable, 1, 1) == "#") {
       cohortDatabaseSchemaTable <- cohortTable
     } else {
-      cohortDatabaseSchemaTable <- paste(cohortDatabaseSchema, cohortTable, sep = ".")
+      cohortDatabaseSchemaTable <- paste0("#", cohortTable)
     }
-    sql <- SqlRender::loadRenderTranslateSql("CreateTempCohortTable.sql",
-                                             packageName = "FeatureExtraction",
-                                             dbms = attr(connection, "dbms"),
-                                             oracleTempSchema = oracleTempSchema,
-                                             cohort_database_schema_table = cohortDatabaseSchemaTable,
-                                             cohort_ids = cohortIds,
-                                             cdm_version = cdmVersion)
-    DatabaseConnector::executeSql(connection, sql, progressBar = FALSE, reportOverallTime = FALSE)
+  } else {
+    cohortDatabaseSchemaTable <- paste(cohortDatabaseSchema, cohortTable, sep = ".")
   }
-
-  if (class(covariateSettings) == "covariateSettings") {
-    fun <- attr(covariateSettings, "fun")
-    args <- list(connection = connection,
-                 oracleTempSchema = oracleTempSchema,
-                 cdmDatabaseSchema = cdmDatabaseSchema,
-                 cdmVersion = cdmVersion,
-                 cohortTempTable = cohortTempTable,
-                 rowIdField = rowIdField,
-                 covariateSettings = covariateSettings)
-    covariateData <- do.call(fun, args)
-
-    if (nrow(covariateData$covariates) == 0) {
-      warning("No data found")
-    } else {
-      open(covariateData$covariates)
-      open(covariateData$covariateRef)
+  sql <- "SELECT COUNT_BIG(*) FROM @cohort_database_schema_table {@cohort_id != -1} ? {WHERE cohort_definition_id = @cohort_id} "
+  sql <- SqlRender::renderSql(sql = sql,
+                              cohort_database_schema_table = cohortDatabaseSchemaTable,
+                              cohort_id = cohortId)$sql
+  sql <- SqlRender::translateSql(sql = sql,
+                                 targetDialect = attr(connection, "dbms"),
+                                 oracleTempSchema = oracleTempSchema)$sql
+  populationSize <- DatabaseConnector::querySql(connection, sql)[1, 1]
+  if (populationSize == 0) {
+    covariateData <- list(covariates = data.frame(), covariateRef = data.frame(), metaData = list())
+    class(covariateData) <- "covariateData"
+    warning("Population is empty. No covariates were constructed")
+  } else {
+    if (class(covariateSettings) == "covariateSettings") {
+      covariateSettings <- list(covariateSettings)
     }
-  } else if (is.list(covariateSettings)) {
-    covariateData <- NULL
-    for (i in 1:length(covariateSettings)) {
-      fun <- attr(covariateSettings[[i]], "fun")
-      args <- list(connection = connection,
-                   oracleTempSchema = oracleTempSchema,
-                   cdmDatabaseSchema = cdmDatabaseSchema,
-                   cdmVersion = cdmVersion,
-                   cohortTempTable = cohortTempTable,
-                   rowIdField = rowIdField,
-                   covariateSettings = covariateSettings[[i]])
-      tempCovariateData <- do.call(fun, args)
-
-      if (is.null(tempCovariateData) || nrow(tempCovariateData$covariates) == 0) {
-        warning("No data found")
-      } else {
-        if (is.null(covariateData)) {
-          covariateData <- tempCovariateData
-        } else {
-          # Remapping covariate IDs when there's overlap:
-          tempCovariateIds <- ff::as.ram(tempCovariateData$covariateRef$covariateId)
-          covariateIds <- ff::as.ram(covariateData$covariateRef$covariateId)
-          overlapping <- tempCovariateIds[tempCovariateIds %in% covariateIds]
-          if (length(overlapping) != 0) {
-            startId <- max(covariateIds)
-            startId <- max(startId, tempCovariateIds)
-            startId <- startId + 1
-            newIds <- startId:(startId + length(overlapping) - 1)
-            for (i in bit::chunk(tempCovariateData$covariateRef$covariateId)) {
-              ids <- tempCovariateData$covariateRef$covariateId[i]
-              ids <- plyr::mapvalues(ids, overlapping, newIds, warn_missing = FALSE)
-              tempCovariateData$covariateRef$covariateId[i] <- ids
+    if (is.list(covariateSettings)) {
+      covariateData <- NULL
+      for (i in 1:length(covariateSettings)) {
+        fun <- attr(covariateSettings[[i]], "fun")
+        args <- list(connection = connection,
+                     oracleTempSchema = oracleTempSchema,
+                     cdmDatabaseSchema = cdmDatabaseSchema,
+                     cohortTable = cohortDatabaseSchemaTable,
+                     cohortId = cohortId,
+                     cdmVersion = cdmVersion,
+                     rowIdField = rowIdField,
+                     covariateSettings = covariateSettings[[i]],
+                     aggregated = aggregated)
+        tempCovariateData <- do.call(fun, args)
+        
+        if (!is.null(tempCovariateData$covariates) || !is.null(tempCovariateData$covariatesContinuous)) {
+          if (is.null(covariateData)) {
+            covariateData <- tempCovariateData
+          } else {
+            # Concatenate covariate data:
+            if (!is.null(tempCovariateData$covariates)) {
+              if (!is.null(covariateData$covariates)) {
+                covariateData$covariates <- ffbase::ffdfappend(covariateData$covariates,
+                                                               tempCovariateData$covariates)
+              } else {
+                covariateData$covariates <- tempCovariateData$covariates
+              }
             }
-            for (i in bit::chunk(tempCovariateData$covariates$covariateId)) {
-              ids <- tempCovariateData$covariates$covariateId[i]
-              ids <- plyr::mapvalues(ids, overlapping, newIds, warn_missing = FALSE)
-              tempCovariateData$covariates$covariateId[i] <- ids
+            if (!is.null(tempCovariateData$covariatesContinuous)) {
+              if (!is.null(covariateData$covariatesContinuous)) {
+                covariateData$covariatesContinuous <- ffbase::ffdfappend(covariateData$covariatesContinuous,
+                                                                         tempCovariateData$covariatesContinuous)
+              } else {
+                covariateData$covariatesContinuous <- tempCovariateData$covariatesContinuous
+              }
             }
-          }
-          covariateData$covariates <- ffbase::ffdfappend(covariateData$covariates,
-                                                         tempCovariateData$covariates)
-          for (colName in (colnames(covariateData$covariateRef))) {
-            if (!(colName %in% colnames(tempCovariateData$covariateRef))) {
-              tempCovariateData$covariateRef$newCol <- ff::ff(NA, nrow(tempCovariateData$covariateRef))
-              colnames(tempCovariateData$covariateRef)[ncol(tempCovariateData$covariateRef)] <- colName
-            }
-          }
-          for (colName in (colnames(tempCovariateData$covariateRef))) {
-            if (!(colName %in% colnames(covariateData$covariateRef))) {
-              covariateData$covariateRef$newCol <- ff::ff(NA, nrow(covariateData$covariateRef))
-              colnames(covariateData$covariateRef)[ncol(covariateData$covariateRef)] <- colName
-            }
-          }
-          covariateData$covariateRef <- ffbase::ffdfappend(covariateData$covariateRef,
-                                                           ff::as.ram(tempCovariateData$covariateRef))
-          for (name in names(tempCovariateData$metaData)) {
-            if (is.null(covariateData$metaData[name])) {
-              covariateData$metaData[[name]] <- tempCovariateData$metaData[[name]]
-            } else {
-              covariateData$metaData[[name]] <- list(covariateData$metaData[[name]],
-                                                   tempCovariateData$metaData[[name]])
+            covariateData$covariateRef <- ffbase::ffdfappend(covariateData$covariateRef,
+                                                             ff::as.ram(tempCovariateData$covariateRef))
+            covariateData$analysisRef <- ffbase::ffdfappend(covariateData$analysisRef,
+                                                            ff::as.ram(tempCovariateData$analysisRef))
+            for (name in names(tempCovariateData$metaData)) {
+              if (is.null(covariateData$metaData[name])) {
+                covariateData$metaData[[name]] <- tempCovariateData$metaData[[name]]
+              } else {
+                covariateData$metaData[[name]] <- list(covariateData$metaData[[name]],
+                                                       tempCovariateData$metaData[[name]])
+              }
             }
           }
         }
       }
     }
   }
-  if (!cohortTableIsTemp || length(cohortIds) != 0) {
-    sql <- "TRUNCATE TABLE #cohort_for_cov_temp; DROP TABLE #cohort_for_cov_temp;"
-    sql <- SqlRender::translateSql(sql = sql,
-                                   targetDialect = attr(connection, "dbms"),
-                                   oracleTempSchema = oracleTempSchema)$sql
-    DatabaseConnector::executeSql(connection, sql, progressBar = FALSE, reportOverallTime = FALSE)
-  }
+  covariateData$metaData$populationSize <- populationSize
+  covariateData$metaData$cohortId <- cohortId
   if (!is.null(connectionDetails)) {
     DatabaseConnector::disconnect(connection)
   }
-  if (normalize) {
-    writeLines("Normalizing covariates")
-    covariateData$covariates <- normalizeCovariates(covariateData$covariates)
-  }
-  covariateData$metaData$cohortIds <- cohortIds
   return(covariateData)
 }
-
 
 #' Save the covariate data to folder
 #'
@@ -238,12 +195,26 @@ saveCovariateData <- function(covariateData, file) {
     stop("Must specify file")
   if (class(covariateData) != "covariateData")
     stop("Data not of class covariateData")
-
-  covariates <- covariateData$covariates
+  
   covariateRef <- covariateData$covariateRef
-  ffbase::save.ffdf(covariates, covariateRef, dir = file)
-  open(covariateData$covariates)
+  analysisRef <- covariateData$analysisRef
+  if (!is.null(covariateData$covariates) && !is.null(covariateData$covariatesContinuous)) {
+    covariates <- covariateData$covariates
+    covariatesContinuous <- covariateData$covariatesContinuous
+    ffbase::save.ffdf(analysisRef, covariateRef, covariates, covariatesContinuous, dir = file)
+    open(covariateData$covariates)
+    open(covariateData$covariatesContinuous)
+  } else if (!is.null(covariateData$covariates) && is.null(covariateData$covariatesContinuous)) {
+    covariates <- covariateData$covariates
+    ffbase::save.ffdf(analysisRef, covariateRef, covariates, dir = file)
+    open(covariateData$covariates)
+  } else if (is.null(covariateData$covariates) && !is.null(covariateData$covariatesContinuous)) {
+    covariatesContinuous <- covariateData$covariatesContinuous
+    ffbase::save.ffdf(analysisRef, covariateRef, covariatesContinuous, dir = file)
+    open(covariateData$covariatesContinuous)
+  }
   open(covariateData$covariateRef)
+  open(covariateData$analysisRef)
   metaData <- covariateData$metaData
   save(metaData, file = file.path(file, "metaData.Rdata"))
 }
@@ -260,7 +231,7 @@ saveCovariateData <- function(covariateData, file) {
 #' The data will be written to a set of files in the folder specified by the user.
 #'
 #' @return
-#' An object of class covariateData
+#' An object of class \code{covariateData}.
 #'
 #' @examples
 #' # todo
@@ -271,39 +242,53 @@ loadCovariateData <- function(file, readOnly = FALSE) {
     stop(paste("Cannot find folder", file))
   if (!file.info(file)$isdir)
     stop(paste("Not a folder", file))
-
+  
   temp <- setwd(file)
   absolutePath <- setwd(temp)
-
+  
   e <- new.env()
   ffbase::load.ffdf(absolutePath, e)
   load(file.path(absolutePath, "metaData.Rdata"), e)
-  result <- list(covariates = get("covariates", envir = e),
+  result <- list(analysisRef = get("analysisRef", envir = e),
                  covariateRef = get("covariateRef", envir = e),
                  metaData = get("metaData", envir = e))
-  # Open all ffdfs to prevent annoying messages later:
-  open(result$covariates, readonly = readOnly)
+  open(result$analysisRef, readonly = readOnly)
   open(result$covariateRef, readonly = readOnly)
-
+  # 'exists' for some reason generates false positives, so checking object names instead:
+  eNames <- ls(envir = e)
+  if (any(eNames == "covariates")) {
+    result$covariates <- get("covariates", envir = e)
+    open(result$covariates, readonly = readOnly)
+  }
+  if (any(eNames == "covariatesContinuous")) {
+    result$covariatesContinuous <- get("covariatesContinuous", envir = e)
+    open(result$covariatesContinuous, readonly = readOnly)
+  }
   class(result) <- "covariateData"
   rm(e)
   return(result)
 }
 
-
 #' @export
 print.covariateData <- function(x, ...) {
   writeLines("CovariateData object")
   writeLines("")
-  writeLines(paste("Cohort of interest concept ID(s):",
-                   paste(x$metaData$cohortIds, collapse = ",")))
+  writeLines(paste("Cohort of interest ID:", x$metaData$cohortId))
 }
 
 #' @export
 summary.covariateData <- function(object, ...) {
+  covariateValueCount <- 0
+  if (!is.null(object$covariates)) {
+    covariateValueCount <- covariateValueCount + nrow(object$covariates)
+  }
+  if (!is.null(object$covariatesContinuous)) {
+    covariateValueCount <- covariateValueCount + nrow(object$covariatesContinuous)
+  }
+  
   result <- list(metaData = object$metaData,
                  covariateCount = nrow(object$covariateRef),
-                 covariateValueCount = nrow(object$covariates))
+                 covariateValueCount = covariateValueCount)
   class(result) <- "summary.covariateData"
   return(result)
 }
@@ -316,44 +301,3 @@ print.summary.covariateData <- function(x, ...) {
   writeLines(paste("Number of non-zero covariate values:", x$covariateValueCount))
 }
 
-
-#' Compute max of values binned by a second variable
-#'
-#' @param values   An ff object containing the numeric values to take the max of.
-#' @param bins     An ff object containing the numeric values to bin by.
-#'
-#' @examples
-#' values <- ff::as.ff(c(1, 1, 2, 2, 1))
-#' bins <- ff::as.ff(c(1, 1, 1, 2, 2))
-#' byMaxFf(values, bins)
-#'
-#' @export
-byMaxFf <- function(values, bins) {
-  .byMax(values, bins)
-}
-
-#' Normalize covariate values
-#'
-#' @details
-#' Normalize covariate values by dividing by the max. This is to avoid numeric problems when fitting
-#' models.
-#'
-#' @param covariates   An ffdf object as generated using the \code{\link{getDbCovariateData}}
-#'                     function.#'
-#'
-#' @export
-normalizeCovariates <- function(covariates) {
-  if (nrow(covariates) == 0) {
-    return(covariates)
-  } else {
-    maxs <- byMaxFf(covariates$covariateValue, covariates$covariateId)
-    names(maxs)[names(maxs) == "bins"] <- "covariateId"
-    result <- ffbase::merge.ffdf(covariates, ff::as.ffdf(maxs))
-    for (i in bit::chunk(result)) {
-      result$covariateValue[i] <- result$covariateValue[i]/result$maxs[i]
-    }
-    result$maxs <- NULL
-    attr(result, "normFactors") <- maxs
-    return(result)
-  }
-}

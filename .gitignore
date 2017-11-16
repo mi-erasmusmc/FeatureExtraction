@@ -21,3 +21,8 @@ src/*.so
 src/*.dll
 /Debug
 standalone/build/*
+
+# Java compiled files
+/bin
+
+/target/

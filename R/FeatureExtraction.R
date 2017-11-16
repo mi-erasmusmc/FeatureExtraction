@@ -23,12 +23,18 @@
 #' @importFrom Rcpp evalCpp
 #' @importFrom SqlRender loadRenderTranslateSql translateSql
 #' @importFrom plyr ddply
+#' @importFrom methods is
+#' @importFrom stats aggregate quantile sd
+#' @importFrom utils read.csv
 #' @import bit
 #' @import DatabaseConnector
 #' @useDynLib FeatureExtraction
 NULL
 
 .onLoad <- function(libname, pkgname) {
+
+  rJava::.jpackage(pkgname, lib.loc = libname)
+
   # Copied this from the ff package:
   if (is.null(getOption("ffmaxbytes"))) {
     # memory.limit is windows specific
@@ -46,6 +52,10 @@ NULL
   options(ffmaxbytes = min(getOption("ffmaxbytes"), .Machine$integer.max * 12))
 }
 
-bySumFf <- function(values, bins) {
-  .bySum(values, bins)
+.toJson <- function(object) {
+  return(as.character(jsonlite::toJSON(object, force = TRUE, auto_unbox = TRUE)))
+}
+
+.fromJson <- function(json) {
+  return(jsonlite::fromJSON(json, simplifyVector = TRUE, simplifyDataFrame = FALSE))
 }
